@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CivicPulse India — National Autonomous Civic Incident Triage & Resolution Portal</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' }
+  </script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    #civicMap { height: 480px; width: 100%; border-radius: 0.5rem; z-index: 10; }
+    .custom-pin {
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 9999px; color: white; font-weight: 800; font-size: 11px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.35); border: 2px solid white;
+    }
+    .govt-tricolor {
+      background: linear-gradient(90deg, #FF9933 0%, #FFFFFF 50%, #128807 100%);
+      height: 4px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
+
+  <!-- Government Tricolor Header Bar -->
+  <div class="govt-tricolor w-full"></div>
+
+  <!-- Top Utility Bar -->
+  <div class="bg-slate-900 text-slate-300 text-[11px] py-1.5 px-4 border-b border-slate-800">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span>🏛️ Government of India • Ministry of Housing & Urban Affairs • National Grievance Portal</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <!-- Language Selector -->
+        <div class="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded px-2 py-0.5">
+          <span class="text-[10px]">🌐</span>
+          <select id="selectLang" class="bg-transparent text-amber-400 font-bold text-[11px] outline-none cursor-pointer">
+            <option value="en" class="bg-slate-900 text-white">English</option>
+            <option value="kn" class="bg-slate-900 text-white">ಕನ್ನಡ (Kannada)</option>
+            <option value="hi" class="bg-slate-900 text-white">हिंदी (Hindi)</option>
+          </select>
+        </div>
+        <span id="gpsStatusBadge" class="bg-blue-900/80 text-blue-200 border border-blue-400/30 px-2 py-0.5 rounded text-[10px] font-bold">
+          🛰️ GPS Active
+        </span>
+        <button id="btnToggleTheme" type="button" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-2.5 py-0.5 rounded transition text-[11px]">
+          🌙 <span id="themeText">Dark Mode</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Portal Header -->
+  <header class="bg-[#061e3d] text-white shadow-md border-b-2 border-amber-500">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3.5">
+        <div class="w-12 h-12 rounded-lg bg-amber-500 flex items-center justify-center text-slate-950 text-2xl font-black shadow border border-amber-300">
+          🇮🇳
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl font-black tracking-tight uppercase">CivicPulse India</h1>
+            <span class="bg-blue-900/80 border border-blue-400/30 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+              National Triage & Action Engine
+            </span>
+          </div>
+          <p class="text-xs text-slate-300">
+            Autonomous AI Grievance Triage, Duplicate Merging & Officer Command Portal
+          </p>
+        </div>
+      </div>
+      <!-- User Session Badge & Logout -->
+      <div id="sessionUserBadge" class="flex items-center gap-3 bg-slate-800/90 border border-slate-700 px-3 py-1.5 rounded-lg text-xs">
+        <div>
+          <span id="sessionRoleText" class="font-extrabold text-amber-400 block">Role: Citizen</span>
+          <span id="sessionNameText" class="text-slate-300 text-[11px]">Ramesh Poojary</span>
+        </div>
+        <button id="btnLogout" type="button" class="bg-red-600 hover:bg-red-700 text-white font-bold px-2.5 py-1 rounded text-[11px] transition">
+          Switch User / Logout
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Toast -->
+  <div id="toastBanner" class="hidden fixed bottom-5 right-5 z-50 max-w-md bg-slate-900 text-white px-4 py-3 rounded-lg shadow-2xl border-l-4 border-amber-500 text-xs font-semibold"></div>
+
+  <!-- ================= FIRST THING: AUTHENTICATION LOGIN GATEWAY MODAL ================= -->
+  <section id="authGatewayModal" class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 space-y-5">
+      <div class="text-center space-y-1.5 border-b border-slate-200 dark:border-slate-800 pb-4">
+        <div class="w-12 h-12 bg-amber-500 text-slate-950 font-black text-xl rounded-xl mx-auto flex items-center justify-center shadow">🏛️</div>
+        <h2 class="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">National Portal Login</h2>
+        <p class="text-xs text-slate-500">Please authenticate as a Citizen or Municipal Officer to proceed</p>
+      </div>
+
+      <!-- Role Selector Tabs -->
+      <div class="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+        <button id="authTabCitizen" type="button" class="py-2 text-xs font-black rounded-md bg-[#061e3d] text-white shadow transition">
+          👤 Citizen Portal
+        </button>
+        <button id="authTabOfficer" type="button" class="py-2 text-xs font-black rounded-md text-slate-700 dark:text-slate-300 transition">
+          🛡️ Officer / Admin
+        </button>
+      </div>
+
+      <!-- Citizen Login Form -->
+      <form id="citizenLoginForm" class="space-y-3.5">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Citizen Full Name</label>
+          <input id="loginCitizenName" type="text" required value="Ramesh Poojary" class="w-full text-xs rounded border border-slate-300 dark:border-slate-700 p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Citizen ID / Mobile Number (10 Digits)</label>
+          <input id="loginCitizenMobile" type="tel" required pattern="[0-9]{10}" value="9876543210" class="w-full text-xs rounded border border-slate-300 dark:border-slate-700 p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium" />
+        </div>
+        <button type="submit" class="w-full bg-[#061e3d] hover:bg-blue-900 text-white font-extrabold text-xs py-3 rounded shadow transition">
+          Login as Citizen & File / Track Grievances
+        </button>
+      </form>
+
+      <!-- Officer Login Form -->
+      <form id="officerLoginForm" class="hidden space-y-3.5">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Officer ID / Username</label>
+          <input id="loginOfficerUser" type="text" required value="admin" class="w-full text-xs rounded border border-slate-300 dark:border-slate-700 p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Department Passkey (Password)</label>
+          <input id="loginOfficerPass" type="password" required value="admin123" class="w-full text-xs rounded border border-slate-300 dark:border-slate-700 p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium" />
+        </div>
+        <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-slate-950 font-black text-xs py-3 rounded shadow transition">
+          Login as Municipal Officer (Access Triage & Command Center)
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= MAIN DASHBOARD CONTENT ================= -->
+  <main class="max-w-7xl w-full mx-auto px-4 py-4 flex-1 space-y-4">
+
+    <!-- KPI Summary Row -->
+    <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div class="bg-white dark:bg-slate-900 rounded-lg p-3.5 border border-slate-300 dark:border-slate-800 shadow-sm">
+        <div id="lblKpiTotal" class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Reports</div>
+        <div id="kpiTotal" class="text-2xl font-black text-slate-900 dark:text-white mt-0.5">35</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 rounded-lg p-3.5 border border-slate-300 dark:border-slate-800 border-l-4 border-l-red-600 shadow-sm">
+        <div id="lblKpiP5" class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Critical Emergencies (P5)</div>
+        <div id="kpiP5" class="text-2xl font-black text-red-600 mt-0.5">2</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 rounded-lg p-3.5 border border-slate-300 dark:border-slate-800 border-l-4 border-l-amber-500 shadow-sm">
+        <div id="lblKpiHotspots" class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Active Hotspots</div>
+        <div id="kpiHotspots" class="text-2xl font-black text-amber-600 mt-0.5">1</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 rounded-lg p-3.5 border border-slate-300 dark:border-slate-800 border-l-4 border-l-indigo-600 shadow-sm">
+        <div id="lblKpiDups" class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Duplicate Merges</div>
+        <div id="kpiDups" class="text-2xl font-black text-indigo-600 mt-0.5">+3</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 rounded-lg p-3.5 border border-slate-300 dark:border-slate-800 border-l-4 border-l-emerald-600 shadow-sm col-span-2 sm:col-span-1">
+        <div id="lblKpiResolved" class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resolved Complaints</div>
+        <div id="kpiResolved" class="text-2xl font-black text-emerald-600 mt-0.5">4 Resolved</div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="flex flex-wrap gap-2 border-b border-slate-300 dark:border-slate-800 pb-2">
+      <button id="tabBtnCapture" type="button" class="tab-nav-btn bg-[#061e3d] text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded shadow-sm transition">
+        📱 <span id="txtTab1">1. File Complaint & AI Triage</span>
+      </button>
+      <button id="tabBtnReveal" type="button" class="tab-nav-btn bg-white dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-xs sm:text-sm px-4 py-2.5 rounded border border-slate-300 dark:border-slate-800 transition">
+        🗺️ <span id="txtTab2">2. Map & Priority Queue</span>
+      </button>
+      <button id="tabBtnAct" type="button" class="tab-nav-btn bg-white dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-xs sm:text-sm px-4 py-2.5 rounded border border-slate-300 dark:border-slate-800 transition">
+        🛠️ <span id="txtTab3">3. Field Crew Dispatch & Kanban</span>
+      </button>
+      <button id="tabBtnTrack" type="button" class="tab-nav-btn bg-white dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-xs sm:text-sm px-4 py-2.5 rounded border border-slate-300 dark:border-slate-800 transition">
+        🔍 <span id="txtTab4">4. Track Complaint Portal</span>
+      </button>
+    </nav>
+
+    <!-- TAB 1: CAPTURE & AI TRIAGE -->
+    <section id="panelCapture" class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div class="lg:col-span-6 bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-800 p-5 shadow-sm space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div>
+            <h2 id="txtHeadingRegister" class="text-base font-black text-slate-900 dark:text-slate-100">📱 Register Grievance</h2>
+            <p id="txtSubHeadingRegister" class="text-xs text-slate-500">Provide complaint details and solve CAPTCHA to submit</p>
+          </div>
+          <span class="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded">
+            🔒 Verified Intake
+          </span>
+        </div>
+
+        <form id="captureForm" class="space-y-3.5">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label id="lblSelectState" for="selectState" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">State / Union Territory</label>
+              <select id="selectState" class="w-full text-xs sm:text-sm rounded border border-slate-300 dark:border-slate-700 p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium"></select>
+            </div>
+            <div>
+              <label for="inputCategory" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Incident Category</label>
+              <select id="inputCategory" class="w-full text-xs sm:text-sm rounded border border-slate-300 dark:border-slate-700 p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium">
+                <option value="Auto-Detect via AI">✨ Auto-Detect via AI Pipeline</option>
+                <option value="Public Safety">Public Safety Emergency</option>
+                <option value="Water/Drainage">Water & Drainage</option>
+                <option value="Roads/Infrastructure">Roads & Infrastructure</option>
+                <option value="Waste/Sanitation">Waste & Sanitation</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label id="lblDesc" for="inputDescription" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Complaint Description</label>
+            <textarea id="inputDescription" rows="3" required class="w-full text-xs sm:text-sm rounded border border-slate-300 dark:border-slate-700 p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium" placeholder="Describe the civic issue clearly...">There is a live high-voltage electric cable snapped and hanging dangerously near the bus shelter entrance!</textarea>
+          </div>
+
+          <!-- GPS Automatic Live Tracker -->
+          <div class="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded border border-slate-200 dark:border-slate-700 space-y-2">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <span id="lblGpsTitle" class="text-xs font-bold text-slate-700 dark:text-slate-300">📡 Automatic Live GPS Location Tracker</span>
+              <span class="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-800 animate-pulse">
+                🟢 Live Tracking Active
+              </span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label class="block text-[10px] text-slate-500 font-bold mb-0.5">Area / Street</label>
+                <input id="inputAddress" type="text" value="Main Bus Stand Road" class="w-full text-xs rounded border border-slate-300 dark:border-slate-700 px-2 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
+              </div>
+              <div>
+                <label class="block text-[10px] text-slate-500 font-bold mb-0.5">Latitude</label>
+                <input id="inputLat" type="number" step="0.000001" value="12.888500" class="w-full text-xs rounded border border-slate-300 dark:border-slate-700 px-2 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
+              </div>
+              <div>
+                <label class="block text-[10px] text-slate-500 font-bold mb-0.5">Longitude</label>
+                <input id="inputLon" type="number" step="0.000001" value="74.846200" class="w-full text-xs rounded border border-slate-300 dark:border-slate-700 px-2 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Dynamic CAPTCHA Challenge -->
+          <div class="bg-amber-50 dark:bg-amber-950/40 p-3 rounded border border-amber-300 dark:border-amber-800 space-y-2">
+            <label class="block text-xs font-extrabold text-amber-900 dark:text-amber-200">
+              🤖 Anti-Robot CAPTCHA Challenge:
+            </label>
+            <div class="flex items-center gap-2">
+              <span id="captchaQuestion" class="font-mono text-sm font-black bg-white dark:bg-slate-800 px-3 py-1.5 rounded border border-amber-400 text-amber-900 dark:text-amber-300">
+                8 + 4 = ?
+              </span>
+              <input id="inputCaptcha" type="number" required placeholder="Enter answer" class="w-32 text-xs rounded border border-amber-400 p-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold" />
+              <button id="btnRefreshCaptcha" type="button" class="text-[11px] font-bold bg-amber-200 dark:bg-amber-800 text-amber-950 dark:text-amber-100 px-2.5 py-1.5 rounded hover:bg-amber-300 transition">
+                🔄 Refresh
+              </button>
+            </div>
+          </div>
+
+          <button id="btnSubmitReport" type="submit" class="w-full bg-[#061e3d] hover:bg-blue-900 text-white font-extrabold text-sm py-3 rounded shadow transition flex items-center justify-center gap-2">
+            🚀 <span id="txtBtnSubmit">Submit Report & Execute AI Triage</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- AI Triage Inspection Output -->
+      <div class="lg:col-span-6 bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-800 p-5 shadow-sm space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div>
+            <h2 id="txtHeadingAi" class="text-base font-black text-slate-900 dark:text-slate-100">🧠 AI Engine Inspection Log</h2>
+            <p id="txtSubHeadingAi" class="text-xs text-slate-500">Autonomous priority assignment & duplicate deduplication</p>
+          </div>
+          <span id="aiReceiptBadge" class="text-xs font-bold bg-slate-900 dark:bg-slate-800 text-white px-3 py-1 rounded border border-slate-700">
+            Viewing #MCC-IND-1001
+          </span>
+        </div>
+
+        <div id="aiSummaryCard" class="p-4 rounded border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/30 space-y-2">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <span id="aiPriorityBadge" class="text-xs font-black px-3 py-1 rounded bg-red-600 text-white">
+              P5 • Critical Emergency (SLA &lt; 2 Hours)
+            </span>
+            <span id="aiAmpBadge" class="text-xs font-bold px-2.5 py-1 rounded bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800">
+              👥 Reported by 1 Citizen
+            </span>
+          </div>
+          <div id="aiSynopsis" class="text-sm font-black text-slate-900 dark:text-slate-100">
+            Emergency: High-voltage live electric wire snapped and hanging dangerously near bus shelter entrance.
+          </div>
+          <div id="aiCategory" class="text-xs font-bold text-slate-600 dark:text-slate-400">
+            📁 Category: Public Safety • Dept: Electrical Safety Emergency Response
+          </div>
+        </div>
+
+        <div class="space-y-2 text-xs">
+          <h3 id="lblAiReasoningTitle" class="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">🤖 Autonomous Inspection Reasoning Log</h3>
+          <ul id="aiAgentLogs" class="space-y-1.5 font-mono text-[11px]">
+            <li class="bg-slate-100 dark:bg-slate-800 p-2 rounded border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+              🛡️ <strong class="text-emerald-600 dark:text-emerald-400">Anti-Robot Verification:</strong> CAPTCHA passed, User identity verified.
+            </li>
+            <li class="bg-slate-100 dark:bg-slate-800 p-2 rounded border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+              ⚡ <strong class="text-blue-600 dark:text-blue-400">NL-Parse:</strong> Matched hazardous tokens ['live wire', 'high-voltage', 'danger'].
+            </li>
+            <li class="bg-slate-100 dark:bg-slate-800 p-2 rounded border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+              📍 <strong class="text-blue-600 dark:text-blue-400">GPS Validation:</strong> Automatic live tracker verified coordinates.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: MAP & PRIORITY QUEUE -->
+    <section id="panelReveal" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div class="lg:col-span-7 bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-800 p-4 shadow-sm space-y-3">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <h2 id="txtMapHeading" class="text-base font-black text-slate-900 dark:text-slate-100">🗺️ Spatial Interactive GIS Map View</h2>
+          <div class="flex gap-2 text-xs">
+            <span class="inline-flex items-center gap-1 font-bold"><span class="w-2.5 h-2.5 rounded-full bg-red-600"></span> P5 Emergency</span>
+            <span class="inline-flex items-center gap-1 font-bold"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Hotspot</span>
+            <span class="inline-flex items-center gap-1 font-bold"><span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span> Standard</span>
+          </div>
+        </div>
+        <div id="civicMap"></div>
+      </div>
+
+      <div class="lg:col-span-5 bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-800 p-4 shadow-sm space-y-3 flex flex-col">
+        <div class="flex items-center justify-between">
+          <h2 id="txtQueueHeading" class="text-base font-black text-slate-900 dark:text-slate-100">📋 Priority Ranked Queue</h2>
+          <span class="text-xs text-slate-500 font-bold">Sorted by SLA Urgency</span>
+        </div>
+        <div id="queueList" class="space-y-2 overflow-y-auto max-h-[440px] pr-1"></div>
+      </div>
+    </section>
+
+    <!-- TAB 3: FIELD CREW DISPATCH & KANBAN -->
+    <section id="panelAct" class="hidden space-y-4">
+      <div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-800 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 id="txtKanbanTitle" class="text-base font-black text-slate-900 dark:text-slate-100">🛠️ Municipal Crew Dispatch & Action Board</h2>
+          <p id="txtKanbanSubtitle" class="text-xs text-slate-500">Officer control panel: Select field crew teams and assign direct status resolutions</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-slate-200/60 dark:bg-slate-900/80 rounded-lg p-3 border border-slate-300 dark:border-slate-800 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-300 dark:border-slate-800 pb-2">
+            <span id="colHeaderNew" class="text-xs font-black uppercase text-slate-700 dark:text-slate-300">📥 New / Triaged</span>
+            <span id="badgeCountTriaged" class="text-xs font-extrabold bg-slate-800 text-white px-2 py-0.5 rounded-full">0</span>
+          </div>
+          <div id="colTriaged" class="space-y-2.5 min-h-[350px]"></div>
+        </div>
+
+        <div class="bg-slate-200/60 dark:bg-slate-900/80 rounded-lg p-3 border border-slate-300 dark:border-slate-800 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-300 dark:border-slate-800 pb-2">
+            <span id="colHeaderInProg" class="text-xs font-black uppercase text-amber-700 dark:text-amber-400">🚜 Dispatched / In Progress</span>
+            <span id="badgeCountInProg" class="text-xs font-extrabold bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full">0</span>
+          </div>
+          <div id="colInProg" class="space-y-2.5 min-h-[350px]"></div>
+        </div>
+
+        <div class="bg-slate-200/60 dark:bg-slate-900/80 rounded-lg p-3 border border-slate-300 dark:border-slate-800 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-300 dark:border-slate-800 pb-2">
+            <span id="colHeaderResolved" class="text-xs font-black uppercase text-emerald-700 dark:text-emerald-400">✅ Resolved</span>
+            <span id="badgeCountResolved" class="text-xs font-extrabold bg-emerald-600 text-white px-2 py-0.5 rounded-full">0</span>
+          </div>
+          <div id="colResolved" class="space-y-2.5 min-h-[350px]"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: TRACK COMPLAINT PORTAL -->
+    <section id="panelTrack" class="hidden bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-800 p-6 shadow-sm space-y-5">
+      <div class="max-w-2xl mx-auto space-y-3 text-center">
+        <h2 id="txtTrackHeading" class="text-xl font-black text-slate-900 dark:text-slate-100">🔍 Citizen Live Status Tracking</h2>
+        <p id="txtTrackSubHeading" class="text-xs text-slate-500">Track your grievance using your Ticket Reference ID (e.g. MCC-IND-1001).</p>
+        <div class="flex gap-2 max-w-md mx-auto">
+          <input id="inputTrackId" type="text" placeholder="Enter Ticket ID (e.g. MCC-IND-1001)" class="flex-1 text-xs sm:text-sm rounded border border-slate-300 dark:border-slate-700 p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium" />
+          <button id="btnSearchTrack" type="button" class="bg-[#061e3d] hover:bg-blue-900 text-white font-bold text-xs sm:text-sm px-5 py-2.5 rounded transition">
+            Search Status
+          </button>
+        </div>
+      </div>
+
+      <div id="trackResultCard" class="hidden max-w-3xl mx-auto border border-slate-300 dark:border-slate-800 rounded-lg p-5 space-y-4 bg-slate-50 dark:bg-slate-800/50">
+        <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3 flex-wrap gap-2">
+          <div>
+            <span id="trackTicketId" class="text-base font-black text-slate-900 dark:text-white">#MCC-IND-1001</span>
+            <div id="trackAdminPath" class="text-xs text-slate-500 font-semibold">Karnataka / Main Bus Stand Road</div>
+          </div>
+          <span id="trackStatusBadge" class="text-xs font-black px-3 py-1 rounded bg-amber-500 text-slate-950">In Progress</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div>
+            <span class="text-slate-500 block font-bold">Category & Department:</span>
+            <span id="trackDept" class="font-bold text-slate-900 dark:text-slate-100">Public Safety • Electrical Safety</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block font-bold">Assigned Field Crew:</span>
+            <span id="trackSla" class="font-extrabold text-amber-600">Rapid Electrical Crew 1</span>
+          </div>
+          <div class="sm:col-span-2">
+            <span class="text-slate-500 block font-bold">Issue Description:</span>
+            <p id="trackSynopsis" class="font-medium text-slate-800 dark:text-slate-200">High voltage live cable snapped near bus shelter.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="bg-slate-900 text-slate-400 text-xs py-4 px-4 border-t border-slate-800 mt-auto">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div>🏛️ PromptWars x ASTRA | AI for Civic Impact Engine</div>
+      <div>30 States & UTs Autonomous Role-Based Governance Portal</div>
+    </div>
+  </footer>
+
+  <!-- Javascript Engine -->
+  <script>
+    let num1 = 0, num2 = 0, captchaAnswer = 0;
+    let currentUserSession = { role: "citizen", name: "Ramesh Poojary" };
+
+    const DICTIONARY = {
+      en: {
+        govtBanner: "🏛️ Government Civic Impact Portal • PromptWars x ASTRA Engine",
+        title: "CivicPulse India",
+        badgeNational: "AI Action Engine",
+        subTitle: "30 States & UTs Autonomous AI Grievance Triage & Role-Based Action Engine",
+        kpiTotal: "Total Reports",
+        kpiP5: "Critical Emergencies (P5)",
+        kpiHotspots: "Active Hotspots",
+        kpiDups: "Duplicate Merges",
+        kpiResolved: "Resolved Complaints",
+        tab1: "1. File Complaint & AI Triage",
+        tab2: "2. Map & Priority Queue",
+        tab3: "3. Field Crew Dispatch & Kanban",
+        tab4: "4. Track Complaint Portal",
+        headingRegister: "📱 Register Grievance",
+        subHeadingRegister: "Provide complaint details and solve CAPTCHA to submit",
+        selectState: "State / Union Territory",
+        category: "Incident Category",
+        desc: "Complaint Description",
+        gpsTitle: "📡 Automatic Live GPS Location Tracker",
+        btnSubmit: "Submit Report & Execute AI Triage",
+        headingAi: "🧠 AI Engine Inspection Log",
+        subHeadingAi: "Autonomous priority assignment & duplicate deduplication",
+        mapHeading: "🗺️ Spatial Interactive GIS Map View",
+        queueHeading: "📋 Priority Ranked Queue",
+        kanbanTitle: "🛠️ Municipal Crew Dispatch & Action Board",
+        kanbanSubtitle: "Officer control panel: Select field crew teams and assign direct status resolutions",
+        colNew: "📥 New / Triaged",
+        colInProg: "🚜 Dispatched / In Progress",
+        colResolved: "✅ Resolved",
+        trackHeading: "🔍 Citizen Live Status Tracking",
+        trackSubHeading: "Track your grievance using your Ticket Reference ID (e.g. MCC-IND-1001)."
+      },
+      kn: {
+        govtBanner: "🏛️ ಸರ್ಕಾರಿ ನಾಗರಿಕ ಪ್ರಭಾವ ಪೋರ್ಟಲ್ • ಸ್ವಾಯತ್ತ AI ಎಂಜಿನ್",
+        title: "ಸಿವಿಕ್ ಪಲ್ಸ್ ಇಂಡಿಯಾ",
+        badgeNational: "AI ಆಕ್ಷನ್ ಎಂಜಿನ್",
+        subTitle: "30 ರಾಜ್ಯಗಳ AI ಸ್ವಯಂಚಾಲಿತ ದೂರು ವಿಂಗಡಣೆ ಮತ್ತು ಪಾತ್ರ ಆಧಾರಿತ ಪೋರ್ಟಲ್",
+        kpiTotal: "ಒಟ್ಟು ದೂರುಗಳು",
+        kpiP5: "ತುರ್ತು ಪ್ರಕರಣಗಳು (P5)",
+        kpiHotspots: "ಸಕ್ರಿಯ ಹಾಟ್‌ಸ್ಪಾಟ್‌ಗಳು",
+        kpiDups: "ನಕಲಿ ವಿಲೀನಗಳು",
+        kpiResolved: "ಬಗೆಹರಿದ ದೂರುಗಳು",
+        tab1: "1. ದೂರು ನೋಂದಣಿ ಮತ್ತು AI ಪರಿಶೀಲನೆ",
+        tab2: "2. ನಕ್ಷೆ ಮತ್ತು ಆದ್ಯತಾ ಪಟ್ಟಿ",
+        tab3: "3. ಸಿಬ್ಬಂದಿ ನಿಯೋಜನೆ ಮತ್ತು ಮಂಡಳಿ",
+        tab4: "4. ದೂರಿನ ಸ್ಥಿತಿ ಪರಿಶೀಲನೆ",
+        headingRegister: "📱 ನಾಗರಿಕ ದೂರು ನೋಂದಣಿ",
+        subHeadingRegister: "ವಿವರಗಳನ್ನು ನೀಡಿ ಮತ್ತು ಕ್ಯಾಪ್ಚಾ ಪರಿಹರಿಸಿ",
+        selectState: "ರಾಜ್ಯ / ಕೇಂದ್ರಾಡಳಿತ ಪ್ರದೇಶ",
+        category: "ಸಮಸ್ಯೆಯ ವರ್ಗ",
+        desc: "ದೂರಿನ ವಿವರಣೆ",
+        gpsTitle: "📡 ಸ್ವಯಂಚಾಲಿತ ರಿಯಲ್-ಟೈಮ್ ಜಿಪಿಎಸ್ ಟ್ರ್ಯಾಕರ್",
+        btnSubmit: "ದೂರು ಸಲ್ಲಿಸಿ ಮತ್ತು AI ಪರಿಶೀಲನೆ ನಡೆಸಿ",
+        headingAi: "🧠 AI ತಪಾಸಣೆ ಮತ್ತು ವಿಶ್ಲೇಷಣೆ",
+        subHeadingAi: "ಸ್ವಯಂಚಾಲಿತ ಆದ್ಯತೆ ಮತ್ತು ನಕಲಿ ದೂರು ಗುರುತಿಸುವಿಕೆ",
+        mapHeading: "🗺️ ಸಂವಾದಾತ್ಮಕ ಜಿಐಎಸ್ ನಕ್ಷೆ ನೋಟ",
+        queueHeading: "📋 ಆದ್ಯತೆ ಆಧಾರಿತ ದೂರುಗಳ ಸಾಲು",
+        kanbanTitle: "🛠️ ಕ್ಷೇತ್ರ ಸಿಬ್ಬಂದಿ ನಿಯೋಜನೆ ಮತ್ತು ನಿರ್ವಹಣೆ",
+        kanbanSubtitle: "ಅಧಿಕಾರಿ ನಿಯಂತ್ರಣ ಫಲಕ: ಸಿಬ್ಬಂದಿ ತಂಡವನ್ನು ಆಯ್ಕೆಮಾಡಿ",
+        colNew: "📥 ಹೊಸ ದೂರುಗಳು",
+        colInProg: "🚜 ಕೆಲಸ ಪ್ರಗತಿಯಲ್ಲಿದೆ",
+        colResolved: "✅ ಬಗೆಹರಿಸಲಾಗಿದೆ",
+        trackHeading: "🔍 ದೂರಿನ ನೇರ ಸ್ಥಿತಿ ಪರಿಶೀಲನೆ",
+        trackSubHeading: "ನಿಮ್ಮ ಟಿಕೆಟ್ ಸಂಖ್ಯೆಯನ್ನು ಬಳಸಿ (ಉದಾ. MCC-IND-1001) ಪರಿಶೀಲಿಸಿ."
+      },
+      hi: {
+        govtBanner: "🏛️ सरकारी नागरिक प्रभाव पोर्टल • स्वायत्त AI इंजन",
+        title: "सिविकपल्स इंडिया",
+        badgeNational: "AI एक्शन इंजन",
+        subTitle: "30 राज्यों का स्वायत्त AI शिकायत निवारण एवं भूमिका-आधारित पोर्टल",
+        kpiTotal: "कुल शिकायतें",
+        kpiP5: "आपातकालीन (P5)",
+        kpiHotspots: "सक्रिय हॉटस्पॉट",
+        kpiDups: "डुप्लिकेट विलय",
+        kpiResolved: "हल की गई शिकायतें",
+        tab1: "1. शिकायत दर्ज करें और AI जांच",
+        tab2: "2. मानचित्र और प्राथमिकता सूची",
+        tab3: "3. फील्ड क्रू आवंटन और कार्य बोर्ड",
+        tab4: "4. शिकायत स्थिति ट्रैकिंग",
+        headingRegister: "📱 नागरिक शिकायत पंजीकरण",
+        subHeadingRegister: "विवरण भरें और कैप्चा हल करें",
+        selectState: "राज्य / केंद्र शासित प्रदेश",
+        category: "समस्या की श्रेणी",
+        desc: "शिकायत का विवरण",
+        gpsTitle: "📡 स्वचालित लाइव जीपीएस ट्रैकर",
+        btnSubmit: "शिकायत दर्ज करें और AI चलाएं",
+        headingAi: "🧠 AI निरीक्षण लॉग",
+        subHeadingAi: "स्वायत्त प्राथमिकता और डुप्लिकेट पहचान",
+        mapHeading: "🗺️ स्थानिक जीआईएस मानचित्र दृश्य",
+        queueHeading: "📋 प्राथमिकता क्रमबद्ध सूची",
+        kanbanTitle: "🛠️ नगर निगम दल प्रेषण और कार्रवाई बोर्ड",
+        kanbanSubtitle: "अधिकारी नियंत्रण कक्ष: फील्ड क्रू चुनें और समाधान दें",
+        colNew: "📥 नई शिकायतें",
+        colInProg: "🚜 प्रगति पर है",
+        colResolved: "✅ हल हो गया",
+        trackHeading: "🔍 नागरिक शिकायत स्थिति ट्रैकिंग",
+        trackSubHeading: "अपनी टिकट आईडी (जैसे MCC-IND-1001) दर्ज करके जांचें।"
+      }
+    };
+
+    const CREW_OPTIONS = [
+      "Rapid Electrical Crew 1",
+      "Roads Maintenance Unit 2",
+      "Water Works Emergency Team 3",
+      "Sanitation Sanitation Unit 4",
+      "Municipal Health & Safety Team 5"
+    ];
+
+    const INDIA_30_STATES = [
+      "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+      "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand",
+      "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur",
+      "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab",
+      "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura",
+      "Uttar Pradesh", "Uttarakhand", "West Bengal", "Delhi (NCT)", "Puducherry"
+    ];
+
+    let incidents = [
+      {
+        id: "MCC-IND-1001",
+        state: "Karnataka",
+        category: "Public Safety",
+        dept: "Electrical Safety Emergency Response",
+        desc: "High-voltage live electric cable snapped and hanging dangerously near bus shelter entrance.",
+        reporter: "Ramesh Poojary",
+        reportsCount: 1,
+        priority: "P5",
+        priorityLabel: "P5 • Critical Emergency",
+        slaHrs: 2,
+        status: "In Progress",
+        crew: "Rapid Electrical Crew 1",
+        lat: 12.8885,
+        lon: 74.8462,
+        timeAgo: "10 mins ago"
+      },
+      {
+        id: "MCC-IND-1002",
+        state: "Karnataka",
+        category: "Roads/Infrastructure",
+        dept: "Municipal Roads & Highways Division",
+        desc: "Deep 2-foot pothole on main road causing heavy traffic slowdown and accidents.",
+        reporter: "Ananya Rao",
+        reportsCount: 4,
+        priority: "P4",
+        priorityLabel: "P4 • High Priority (Hotspot)",
+        slaHrs: 12,
+        status: "Triaged",
+        crew: "Unassigned",
+        lat: 12.8920,
+        lon: 74.8510,
+        timeAgo: "35 mins ago"
+      }
+    ];
+
+    let leafMap = null;
+    let mapMarkers = [];
+    let currentLang = "en";
+
+    document.addEventListener("DOMContentLoaded", () => {
+      generateCaptcha();
+      initStatesDropdown();
+      setupAuthGateway();
+      setupTabs();
+      setupThemeToggle();
+      startAutomaticGPSTracker();
+      setupLanguageSelector();
+      renderAllViews();
+
+      document.getElementById("btnRefreshCaptcha").addEventListener("click", generateCaptcha);
+      document.getElementById("captureForm").addEventListener("submit", handleFormSubmit);
+      document.getElementById("btnSearchTrack").addEventListener("click", handleTrackSearch);
+    });
+
+    function setupAuthGateway() {
+      const modal = document.getElementById("authGatewayModal");
+      const tabCitizen = document.getElementById("authTabCitizen");
+      const tabOfficer = document.getElementById("authTabOfficer");
+      const citizenForm = document.getElementById("citizenLoginForm");
+      const officerForm = document.getElementById("officerLoginForm");
+
+      tabCitizen.addEventListener("click", () => {
+        tabCitizen.className = "py-2 text-xs font-black rounded-md bg-[#061e3d] text-white shadow transition";
+        tabOfficer.className = "py-2 text-xs font-black rounded-md text-slate-700 dark:text-slate-300 transition";
+        citizenForm.classList.remove("hidden");
+        officerForm.classList.add("hidden");
+      });
+
+      tabOfficer.addEventListener("click", () => {
+        tabOfficer.className = "py-2 text-xs font-black rounded-md bg-amber-600 text-slate-950 shadow transition";
+        tabCitizen.className = "py-2 text-xs font-black rounded-md text-slate-700 dark:text-slate-300 transition";
+        officerForm.classList.remove("hidden");
+        citizenForm.classList.add("hidden");
+      });
+
+      citizenForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const name = document.getElementById("loginCitizenName").value;
+        currentUserSession = { role: "citizen", name: name };
+        modal.classList.add("hidden");
+        applyUserRoleSession();
+        showToast(`✅ Welcome Citizen, ${name}!`);
+      });
+
+      officerForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const user = document.getElementById("loginOfficerUser").value;
+        const pass = document.getElementById("loginOfficerPass").value;
+        if (user === "admin" && pass === "admin123") {
+          currentUserSession = { role: "officer", name: "Municipal Comm. Admin" };
+          modal.classList.add("hidden");
+          applyUserRoleSession();
+          showToast(`🛡️ Officer Login Successful. Welcome Admin!`);
+        } else {
+          showToast(`❌ Invalid credentials! Use admin / admin123`);
+        }
+      });
+
+      document.getElementById("btnLogout").addEventListener("click", () => {
+        modal.classList.remove("hidden");
+      });
+    }
+
+    function applyUserRoleSession() {
+      const badge = document.getElementById("sessionUserBadge");
+      const roleText = document.getElementById("sessionRoleText");
+      const nameText = document.getElementById("sessionNameText");
+      badge.classList.remove("hidden");
+      badge.classList.add("flex");
+
+      roleText.textContent = `Role: ${currentUserSession.role.toUpperCase()}`;
+      nameText.textContent = currentUserSession.name;
+
+      if (currentUserSession.role === "officer") {
+        document.getElementById("tabBtnReveal").click();
+      } else {
+        document.getElementById("tabBtnCapture").click();
+      }
+    }
+
+    function generateCaptcha() {
+      num1 = Math.floor(Math.random() * 10) + 1;
+      num2 = Math.floor(Math.random() * 10) + 1;
+      captchaAnswer = num1 + num2;
+      document.getElementById("captchaQuestion").textContent = `${num1} + ${num2} = ?`;
+      document.getElementById("inputCaptcha").value = "";
+    }
+
+    function startAutomaticGPSTracker() {
+      const badge = document.getElementById("gpsStatusBadge");
+      if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            const lat = pos.coords.latitude.toFixed(6);
+            const lon = pos.coords.longitude.toFixed(6);
+            document.getElementById("inputLat").value = lat;
+            document.getElementById("inputLon").value = lon;
+            badge.textContent = `🛰️ Real-time GPS: ${lat}, ${lon}`;
+          },
+          (err) => {
+            badge.textContent = "📍 GPS Active (Default Coord)";
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      }
+    }
+
+    function setupLanguageSelector() {
+      const selectLang = document.getElementById("selectLang");
+      selectLang.addEventListener("change", (e) => {
+        currentLang = e.target.value;
+        applyTranslations(currentLang);
+      });
+    }
+
+    function applyTranslations(lang) {
+      const d = DICTIONARY[lang];
+      if (!d) return;
+
+      document.getElementById("txtGovtBanner").textContent = d.govtBanner;
+      document.getElementById("lblKpiTotal").textContent = d.kpiTotal;
+      document.getElementById("lblKpiP5").textContent = d.kpiP5;
+      document.getElementById("lblKpiHotspots").textContent = d.kpiHotspots;
+      document.getElementById("lblKpiDups").textContent = d.kpiDups;
+      document.getElementById("lblKpiResolved").textContent = d.kpiResolved;
+
+      document.getElementById("txtTab1").textContent = d.tab1;
+      document.getElementById("txtTab2").textContent = d.tab2;
+      document.getElementById("txtTab3").textContent = d.tab3;
+      document.getElementById("txtTab4").textContent = d.tab4;
+
+      document.getElementById("txtHeadingRegister").textContent = d.headingRegister;
+      document.getElementById("txtSubHeadingRegister").textContent = d.subHeadingRegister;
+      document.getElementById("lblSelectState").textContent = d.selectState;
+      document.getElementById("lblDesc").textContent = d.desc;
+      document.getElementById("lblGpsTitle").textContent = d.gpsTitle;
+      document.getElementById("txtBtnSubmit").textContent = d.btnSubmit;
+
+      document.getElementById("txtHeadingAi").textContent = d.headingAi;
+      document.getElementById("txtSubHeadingAi").textContent = d.subHeadingAi;
+      document.getElementById("txtMapHeading").textContent = d.mapHeading;
+      document.getElementById("txtQueueHeading").textContent = d.queueHeading;
+
+      document.getElementById("txtKanbanTitle").textContent = d.kanbanTitle;
+      document.getElementById("txtKanbanSubtitle").textContent = d.kanbanSubtitle;
+      document.getElementById("colHeaderNew").textContent = d.colNew;
+      document.getElementById("colHeaderInProg").textContent = d.colInProg;
+      document.getElementById("colHeaderResolved").textContent = d.colResolved;
+
+      document.getElementById("txtTrackHeading").textContent = d.trackHeading;
+      document.getElementById("txtTrackSubHeading").textContent = d.trackSubHeading;
+
+      showToast(`🌐 Language set to ${selectLang.options[selectLang.selectedIndex].text}`);
+    }
+
+    function initStatesDropdown() {
+      const select = document.getElementById("selectState");
+      select.innerHTML = "";
+      INDIA_30_STATES.forEach(st => {
+        const opt = document.createElement("option");
+        opt.value = st;
+        opt.textContent = st;
+        if (st === "Karnataka") opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+
+    function setupThemeToggle() {
+      const btn = document.getElementById("btnToggleTheme");
+      const txt = document.getElementById("themeText");
+
+      btn.addEventListener("click", () => {
+        const html = document.documentElement;
+        if (html.classList.contains("dark")) {
+          html.classList.remove("dark");
+          html.classList.add("light");
+          txt.textContent = "Dark Mode";
+          showToast("☀️ Switched to Light Theme");
+        } else {
+          html.classList.remove("light");
+          html.classList.add("dark");
+          txt.textContent = "Light Mode";
+          showToast("🌙 Switched to Dark Theme");
+        }
+      });
+    }
+
+    function setupTabs() {
+      const tabs = [
+        { btn: "tabBtnCapture", panel: "panelCapture" },
+        { btn: "tabBtnReveal", panel: "panelReveal", onActivate: initMap },
+        { btn: "tabBtnAct", panel: "panelAct" },
+        { btn: "tabBtnTrack", panel: "panelTrack" }
+      ];
+
+      tabs.forEach(t => {
+        document.getElementById(t.btn).addEventListener("click", () => {
+          tabs.forEach(x => {
+            const b = document.getElementById(x.btn);
+            const p = document.getElementById(x.panel);
+            b.classList.remove("bg-[#061e3d]", "text-white");
+            b.classList.add("bg-white", "dark:bg-slate-900", "text-slate-800", "dark:text-slate-200");
+            p.classList.add("hidden");
+          });
+
+          const activeBtn = document.getElementById(t.btn);
+          const activePanel = document.getElementById(t.panel);
+          activeBtn.classList.remove("bg-white", "dark:bg-slate-900", "text-slate-800", "dark:text-slate-200");
+          activeBtn.classList.add("bg-[#061e3d]", "text-white");
+          activePanel.classList.remove("hidden");
+
+          if (t.onActivate) t.onActivate();
+        });
+      });
+    }
+
+    function handleFormSubmit(e) {
+      e.preventDefault();
+
+      const userCaptcha = parseInt(document.getElementById("inputCaptcha").value);
+      if (userCaptcha !== captchaAnswer) {
+        showToast("❌ CAPTCHA Verification Failed! Please enter the correct sum.");
+        generateCaptcha();
+        return;
+      }
+
+      const st = document.getElementById("selectState").value;
+      const desc = document.getElementById("inputDescription").value;
+      const name = currentUserSession.name;
+      const lat = parseFloat(document.getElementById("inputLat").value) || 12.8885;
+      const lon = parseFloat(document.getElementById("inputLon").value) || 74.8462;
+      let cat = document.getElementById("inputCategory").value;
+
+      const existing = incidents.find(i => {
+        const dLat = Math.abs(i.lat - lat);
+        const dLon = Math.abs(i.lon - lon);
+        return dLat < 0.005 && dLon < 0.005;
+      });
+
+      if (existing) {
+        existing.reportsCount += 1;
+        if (existing.reportsCount >= 3 && existing.priority !== "P5") {
+          existing.priority = "P4";
+          existing.priorityLabel = "P4 • High Priority (Hotspot Cluster)";
+        }
+        showToast(`⚡ Duplicate Merged with Ticket #${existing.id}! Count: ${existing.reportsCount}`);
+        generateCaptcha();
+        renderAllViews();
+        updateAiCard(existing, true);
+        return;
+      }
+
+      let p = "P2";
+      let pLabel = "P2 • Standard Priority";
+      let sla = 48;
+      let dept = "Municipal Works Department";
+
+      const lower = desc.toLowerCase();
+      if (lower.includes("wire") || lower.includes("electric") || lower.includes("fire") || lower.includes("danger") || lower.includes("snapped") || lower.includes("cable")) {
+        p = "P5";
+        pLabel = "P5 • Critical Emergency";
+        sla = 2;
+        cat = "Public Safety";
+        dept = "Electrical Safety Emergency Response";
+      } else if (lower.includes("hole") || lower.includes("pothole") || lower.includes("road") || lower.includes("tar")) {
+        p = "P3";
+        pLabel = "P3 • Medium Priority";
+        sla = 24;
+        cat = "Roads/Infrastructure";
+        dept = "Municipal Roads & Highways Division";
+      } else if (lower.includes("water") || lower.includes("leak") || lower.includes("pipe") || lower.includes("drain")) {
+        p = "P3";
+        pLabel = "P3 • Medium Priority";
+        sla = 24;
+        cat = "Water/Drainage";
+        dept = "Public Water Works";
+      }
+
+      const newId = `MCC-IND-${1000 + incidents.length + 1}`;
+      const newIncident = {
+        id: newId,
+        state: st,
+        category: cat,
+        dept: dept,
+        desc: desc,
+        reporter: name,
+        reportsCount: 1,
+        priority: p,
+        priorityLabel: pLabel,
+        slaHrs: sla,
+        status: "Triaged",
+        crew: "Unassigned",
+        lat: lat,
+        lon: lon,
+        timeAgo: "Just now"
+      };
+
+      incidents.unshift(newIncident);
+      showToast(`🛡️ Complaint Registered Successfully! Ticket ID: #${newId}`);
+      generateCaptcha();
+      renderAllViews();
+      updateAiCard(newIncident, false);
+      document.getElementById("inputTrackId").value = newId;
+    }
+
+    function updateAiCard(item, isDup) {
+      document.getElementById("aiReceiptBadge").textContent = `Viewing #${item.id}`;
+      document.getElementById("aiPriorityBadge").textContent = item.priorityLabel;
+      document.getElementById("aiAmpBadge").textContent = `👥 Reported by ${item.reportsCount} Citizen(s)`;
+      document.getElementById("aiSynopsis").textContent = item.desc;
+      document.getElementById("aiCategory").textContent = `📁 Category: ${item.category} • Dept: ${item.dept}`;
+
+      const logs = document.getElementById("aiAgentLogs");
+      logs.innerHTML = `
+        <li class="bg-slate-100 dark:bg-slate-800 p-2 rounded border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+          🛡️ <strong class="text-emerald-600 dark:text-emerald-400">Security Gate:</strong> CAPTCHA verified, User session active (${item.reporter}).
+        </li>
+        <li class="bg-slate-100 dark:bg-slate-800 p-2 rounded border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+          ⚡ <strong class="text-blue-600 dark:text-blue-400">NL-Parse:</strong> Categorized as '${item.category}'.
+        </li>
+        <li class="bg-slate-100 dark:bg-slate-800 p-2 rounded border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+          📍 <strong class="text-blue-600 dark:text-blue-400">GPS Spatial Check:</strong> ${isDup ? `Matched incident #${item.id} within 500m. Amplified.` : `New spatial coordinate logged (${item.lat}, ${item.lon}).`}
+        </li>
+      `;
+    }
+
+    function renderAllViews() {
+      updateKpis();
+      renderQueue();
+      renderKanban();
+      if (leafMap) updateMapMarkers();
+    }
+
+    function updateKpis() {
+      document.getElementById("kpiTotal").textContent = incidents.length;
+      document.getElementById("kpiP5").textContent = incidents.filter(i => i.priority === "P5").length;
+      document.getElementById("kpiHotspots").textContent = incidents.filter(i => i.reportsCount > 2).length;
+      document.getElementById("kpiDups").textContent = "+" + incidents.reduce((acc, curr) => acc + (curr.reportsCount - 1), 0);
+      document.getElementById("kpiResolved").textContent = incidents.filter(i => i.status === "Resolved").length + " Resolved";
+    }
+
+    function renderQueue() {
+      const container = document.getElementById("queueList");
+      container.innerHTML = "";
+
+      const sorted = [...incidents].sort((a,b) => b.priority.localeCompare(a.priority));
+
+      sorted.forEach(item => {
+        const div = document.createElement("div");
+        div.className = "p-3 rounded border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 hover:border-amber-500 transition space-y-1.5";
+        
+        let pColor = "bg-blue-600";
+        if (item.priority === "P5") pColor = "bg-red-600 animate-pulse";
+        if (item.priority === "P4") pColor = "bg-amber-500";
+
+        div.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-black text-slate-900 dark:text-white">#${item.id}</span>
+            <span class="text-[10px] font-bold text-white px-2 py-0.5 rounded ${pColor}">${item.priorityLabel}</span>
+          </div>
+          <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 line-clamp-2">${item.desc}</p>
+          <div class="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+            <span>📍 State: ${item.state}</span>
+            <span class="font-bold text-indigo-600 dark:text-indigo-400">👥 ${item.reportsCount} Reports</span>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function renderKanban() {
+      const colTriaged = document.getElementById("colTriaged");
+      const colInProg = document.getElementById("colInProg");
+      const colResolved = document.getElementById("colResolved");
+
+      colTriaged.innerHTML = "";
+      colInProg.innerHTML = "";
+      colResolved.innerHTML = "";
+
+      let cTriaged = 0, cInProg = 0, cResolved = 0;
+
+      incidents.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-300 dark:border-slate-800 shadow-sm space-y-2.5 text-xs";
+
+        let crewSelectHtml = `<select id="crewSelect_${item.id}" class="w-full text-[11px] rounded border border-slate-300 dark:border-slate-700 px-2 py-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold">`;
+        CREW_OPTIONS.forEach(c => {
+          const selected = (item.crew === c) ? 'selected' : '';
+          crewSelectHtml += `<option value="${c}" ${selected}>👷 ${c}</option>`;
+        });
+        crewSelectHtml += `</select>`;
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="font-black text-slate-900 dark:text-white">#${item.id}</span>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded ${item.priority === 'P5' ? 'bg-red-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200'}">${item.priority}</span>
+          </div>
+          <p class="font-medium text-slate-800 dark:text-slate-200">${item.desc}</p>
+          <div class="text-[10px] text-slate-500 font-semibold">🏢 ${item.dept}</div>
+          
+          <div class="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+            <label class="block text-[10px] font-bold text-slate-600 dark:text-slate-400">Assign Field Crew Unit:</label>
+            ${crewSelectHtml}
+          </div>
+
+          <div class="flex items-center justify-between pt-2">
+            <span class="text-[10px] font-extrabold text-amber-600">Status: ${item.status}</span>
+            <div class="flex gap-1.5">
+              ${item.status === 'Triaged' ? `<button onclick="dispatchCrew('${item.id}')" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-[10px] px-2.5 py-1 rounded transition">🚜 Dispatch</button>` : ''}
+              ${item.status === 'In Progress' ? `<button onclick="resolveComplaint('${item.id}')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] px-2.5 py-1 rounded transition">✅ Resolve</button>` : ''}
+              ${item.status === 'Resolved' ? `<span class="bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] px-2 py-0.5 rounded">Completed</span>` : ''}
+            </div>
+          </div>
+        `;
+
+        if (item.status === "Triaged") {
+          colTriaged.appendChild(card);
+          cTriaged++;
+        } else if (item.status === "In Progress") {
+          colInProg.appendChild(card);
+          cInProg++;
+        } else if (item.status === "Resolved") {
+          colResolved.appendChild(card);
+          cResolved++;
+        }
+      });
+
+      document.getElementById("badgeCountTriaged").textContent = cTriaged;
+      document.getElementById("badgeCountInProg").textContent = cInProg;
+      document.getElementById("badgeCountResolved").textContent = cResolved;
+    }
+
+    window.dispatchCrew = function(id) {
+      const item = incidents.find(i => i.id === id);
+      const sel = document.getElementById(`crewSelect_${id}`);
+      if (item && sel) {
+        item.crew = sel.value;
+        item.status = "In Progress";
+        showToast(`🚜 Dispatched '${item.crew}' to Ticket #${id}`);
+        renderAllViews();
+      }
+    };
+
+    window.resolveComplaint = function(id) {
+      const item = incidents.find(i => i.id === id);
+      const sel = document.getElementById(`crewSelect_${id}`);
+      if (item) {
+        if (sel) item.crew = sel.value;
+        item.status = "Resolved";
+        showToast(`✅ Ticket #${id} marked as RESOLVED by '${item.crew}'`);
+        renderAllViews();
+      }
+    };
+
+    function initMap() {
+      if (leafMap) return;
+      leafMap = L.map("civicMap").setView([12.8885, 74.8462], 10);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "© OpenStreetMap contributors"
+      }).addTo(leafMap);
+
+      updateMapMarkers();
+    }
+
+    function updateMapMarkers() {
+      if (!leafMap) return;
+      mapMarkers.forEach(m => leafMap.removeLayer(m));
+      mapMarkers = [];
+
+      incidents.forEach(item => {
+        let pinColor = "bg-blue-600";
+        if (item.priority === "P5") pinColor = "bg-red-600";
+        if (item.priority === "P4") pinColor = "bg-amber-500";
+
+        const customIcon = L.divIcon({
+          className: "custom-div-icon",
+          html: `<div class="custom-pin w-7 h-7 ${pinColor}">${item.priority}</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        const marker = L.marker([item.lat, item.lon], { icon: customIcon }).addTo(leafMap);
+        marker.bindPopup(`
+          <div class="p-1 space-y-1 text-xs">
+            <strong class="text-slate-900">#${item.id} • ${item.priorityLabel}</strong>
+            <p class="text-slate-700">${item.desc}</p>
+            <div class="text-[10px] text-slate-500 font-bold">📍 ${item.state} | 👥 ${item.reportsCount} Reports</div>
+          </div>
+        `);
+        mapMarkers.push(marker);
+      });
+    }
+
+    function handleTrackSearch() {
+      const q = document.getElementById("inputTrackId").value.trim().toUpperCase();
+      const card = document.getElementById("trackResultCard");
+      const item = incidents.find(i => i.id.toUpperCase() === q || i.id.replace("-", "").toUpperCase() === q);
+
+      if (item) {
+        card.classList.remove("hidden");
+        document.getElementById("trackTicketId").textContent = `#${item.id}`;
+        document.getElementById("trackAdminPath").textContent = `State: ${item.state} | Filed by: ${item.reporter}`;
+        document.getElementById("trackStatusBadge").textContent = item.status;
+        document.getElementById("trackDept").textContent = `${item.category} • ${item.dept}`;
+        document.getElementById("trackSynopsis").textContent = item.desc;
+        document.getElementById("trackSla").textContent = `${item.crew}`;
+      } else {
+        showToast("⚠️ Ticket ID not found!");
+        card.classList.add("hidden");
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById("toastBanner");
+      toast.textContent = msg;
+      toast.classList.remove("hidden");
+      setTimeout(() => {
+        toast.classList.add("hidden");
+      }, 4000);
+    }
+  </script>
+</body>
+</html>
